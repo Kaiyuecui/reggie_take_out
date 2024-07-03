@@ -12,11 +12,13 @@ import com.cky.service.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -41,10 +43,20 @@ public class DishController {
     private  SetmealService setmealService;
     @Autowired
     private SetmealDishService setmealDishService;
+    @Autowired
+    private RedisTemplate redisTemplate;
 
+    /**
+     * 增加菜品信息
+     * @param dishDto
+     * @return
+     */
     @PostMapping
     public R<String> addDish(@RequestBody DishDto dishDto){
         dishService.addwithFlavor(dishDto);
+        //清除某个分类
+        String key="dish_ID"+dishDto.getCategoryId()+"_1";
+        redisTemplate.delete(key);
         return R.success("新增菜品成功");
     }
 
@@ -108,6 +120,12 @@ public class DishController {
     @PutMapping
     public R<String> updateDish(@RequestBody DishDto dishDto){
         dishService.updatewithFlavor(dishDto);
+        //清除所有菜品缓存数据
+        Set keys = redisTemplate.keys("dish_ID*");
+        redisTemplate.delete(keys);
+        //清除某个分类
+        String key="dish_ID"+dishDto.getCategoryId()+"_1";
+        redisTemplate.delete(key);
         return R.success("修改菜品成功");
     }
 
@@ -191,13 +209,21 @@ public class DishController {
     public R<List<DishDto>> listR(Dish dish)
     {
         Long id = dish.getCategoryId();
+        List<DishDto> collect=null;
+        //动态设置key
+        String key="dish_ID"+dish.getCategoryId()+"_"+dish.getStatus();
+        //先从redis中取 如果有则直接返回
+        collect = (List<DishDto>) redisTemplate.opsForValue().get(key);
+        if(collect !=null){
+            return R.success(collect);
+        }
         LambdaQueryWrapper<Dish> lambdaQueryWrapper=new LambdaQueryWrapper();
         lambdaQueryWrapper.eq(id!=null,Dish::getCategoryId,id);
         lambdaQueryWrapper.eq(Dish::getStatus,1);
         lambdaQueryWrapper.orderByAsc(Dish::getSort).orderByDesc(Dish::getUpdateTime);
         List<Dish> list = dishService.list(lambdaQueryWrapper);//获得所有的菜品 但是为了让前端能够展示规格 我们需要将口味也返回
         List<DishDto> listdto=null;
-        List<DishDto> collect = list.stream().map((item) -> {
+        collect = list.stream().map((item) -> {
             DishDto dishDto = new DishDto();
             BeanUtils.copyProperties(item, dishDto);
             //通过id获取菜品分类名称
@@ -214,6 +240,8 @@ public class DishController {
             dishDto.setFlavors(list1);
             return dishDto;
         }).collect(Collectors.toList());
+        //如果没有 则缓存在redis中
+        redisTemplate.opsForValue().set(key,collect,60, TimeUnit.MINUTES);
         return R.success(collect);
 
     }
