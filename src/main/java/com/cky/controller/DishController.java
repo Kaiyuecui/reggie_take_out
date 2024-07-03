@@ -120,9 +120,9 @@ public class DishController {
     @PutMapping
     public R<String> updateDish(@RequestBody DishDto dishDto){
         dishService.updatewithFlavor(dishDto);
-        //清除所有菜品缓存数据
-        Set keys = redisTemplate.keys("dish_ID*");
-        redisTemplate.delete(keys);
+//        //清除所有菜品缓存数据
+//        Set keys = redisTemplate.keys("dish_ID*");
+//        redisTemplate.delete(keys);
         //清除某个分类
         String key="dish_ID"+dishDto.getCategoryId()+"_1";
         redisTemplate.delete(key);
